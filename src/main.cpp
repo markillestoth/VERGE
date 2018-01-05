@@ -875,10 +875,8 @@ bool CMerkleTx::AcceptToMemoryPool(CTxDB& txdb, bool fCheckInputs)
             return false;
         return CTransaction::AcceptToMemoryPool(txdb, false);
     }
-    else
-    {
-        return CTransaction::AcceptToMemoryPool(txdb, fCheckInputs);
-    }
+    
+    return CTransaction::AcceptToMemoryPool(txdb, fCheckInputs);
 }
 
 bool CMerkleTx::AcceptToMemoryPool()
@@ -2351,7 +2349,7 @@ bool CBlock::AcceptBlock()
     {
         LOCK(cs_vNodes);
         BOOST_FOREACH(CNode* pnode, vNodes)
-            if (nBestHeight > (pnode->nStartingHeight != -1 ? pnode->nStartingHeight - 2000 : nBlockEstimate))
+            if (nBestHeight > (pnode->nChainHeight != -1 ? pnode->nChainHeight - 2000 : nBlockEstimate))
                 pnode->PushInventory(CInv(MSG_BLOCK, hash));
     }
 
@@ -2614,7 +2612,7 @@ CMerkleBlock::CMerkleBlock(const CBlock& block, CBloomFilter& filter)
     for (unsigned int i = 0; i < block.vtx.size(); i++)
     {
         uint256 hash = block.vtx[i].GetHash();
-        if (filter.IsRelevantAndUpdate(block.vtx[i], hash))
+        if (filter.IsRelevantAndUpdate(block.vtx[i]))
         {
             vMatch.push_back(true);
             vMatchedTxn.push_back(make_pair(i, hash));
@@ -3227,7 +3225,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         if (!vRecv.empty())
             vRecv >> pfrom->strSubVer;
         if (!vRecv.empty())
-            vRecv >> pfrom->nStartingHeight;
+            vRecv >> pfrom->nChainHeight;
 		if (!vRecv.empty())
             vRecv >> pfrom->fRelayTxes; // set to true after we get the first filter* message
         else
@@ -3291,7 +3289,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         // Ask the first connected node for block updates
         static int nAskedForBlocks = 0;
         if (!pfrom->fClient && !pfrom->fOneShot &&
-            (pfrom->nStartingHeight > (nBestHeight - 144)) &&
+            (pfrom->nChainHeight > (nBestHeight - 144)) &&
             (nAskedForBlocks < 1 || vNodes.size() <= 1))
         {
             nAskedForBlocks++;
@@ -3314,9 +3312,9 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 
         pfrom->fSuccessfullyConnected = true;
 
-        printf("receive version message: version %d, blocks=%d, us=%s, them=%s, peer=%s\n", pfrom->nVersion, pfrom->nStartingHeight, addrMe.ToString().c_str(), addrFrom.ToString().c_str(), pfrom->addr.ToString().c_str());
+        printf("receive version message: version %d, blocks=%d, us=%s, them=%s, peer=%s\n", pfrom->nVersion, pfrom->nChainHeight, addrMe.ToString().c_str(), addrFrom.ToString().c_str(), pfrom->addr.ToString().c_str());
 
-        cPeerBlockCounts.input(pfrom->nStartingHeight);
+        cPeerBlockCounts.input(pfrom->nChainHeight);
 
         // ppcoin: ask for pending sync-checkpoint if any
         if (!IsInitialBlockDownload())
@@ -3767,7 +3765,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         vector<CInv> vInv;
         BOOST_FOREACH(uint256& hash, vtxid) {
             CInv inv(MSG_TX, hash);
-            if ((pfrom->pfilter && pfrom->pfilter->IsRelevantAndUpdate(mempool.lookup(hash), hash)) ||
+            if ((pfrom->pfilter && pfrom->pfilter->IsRelevantAndUpdate(mempool.lookup(hash))) ||
                (!pfrom->pfilter))
                 vInv.push_back(inv);
             if (vInv.size() == MAX_INV_SZ)
@@ -3951,8 +3949,8 @@ bool ProcessMessages(CNode* pfrom)
     CDataStream& vRecv = pfrom->vRecv;
     if (vRecv.empty())
         return true;
-    //if (fDebug)
-    //    printf("ProcessMessages(%u bytes)\n", vRecv.size());
+    
+    printf("ProcessMessages(%u bytes)\n", vRecv.size());
 
     //
     // Message format
